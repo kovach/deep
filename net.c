@@ -18,68 +18,31 @@
  *   Sample Results
  *   --------------
  *
- *     0) softmax:
- *       ===== EPOCH: 14 =====
- *       EOF at 10000!
- *       0 ratio correct: 0.97
- *       1 ratio correct: 0.97
- *       2 ratio correct: 0.90
- *       3 ratio correct: 0.90
- *       4 ratio correct: 0.93
- *       5 ratio correct: 0.88
- *       6 ratio correct: 0.95
- *       7 ratio correct: 0.93
- *       8 ratio correct: 0.88
- *       9 ratio correct: 0.92
- *       ~30 second runtime
- *
- *     1) with 1 linear convolution layer (6 filters):
- *       ===== EPOCH: 14 =====
- *       0 ratio correct: 0.96
- *       1 ratio correct: 0.94
- *       2 ratio correct: 0.88
- *       3 ratio correct: 0.87
- *       4 ratio correct: 0.90
- *       5 ratio correct: 0.85
- *       6 ratio correct: 0.93
- *       7 ratio correct: 0.90
- *       8 ratio correct: 0.85
- *       9 ratio correct: 0.85
- *       ./net  284.58s user 0.09s system 99% cpu 4:44.77 total
- *
- *
- *     2) with 1 convolution layer and relu nonlinearity (6 filters):
- *     ...
- *     ===== EPOCH: 6 =====
- *     EOF at 10000!
- *     0 ratio correct: 0.97
- *     1 ratio correct: 0.96
- *     2 ratio correct: 0.93
- *     3 ratio correct: 0.93
- *     4 ratio correct: 0.94
- *     5 ratio correct: 0.93
- *     6 ratio correct: 0.96
- *     7 ratio correct: 0.94
- *     8 ratio correct: 0.92
- *     9 ratio correct: 0.92
+ *   See `read` function for training details.
+ *   Used 8500 cases for training and the remaining 1500 for validation:
  *     ...
  *     ===== EPOCH: 14 =====
  *     EOF at 10000!
  *     0 ratio correct: 0.99
- *     1 ratio correct: 0.98
- *     2 ratio correct: 0.97
- *     3 ratio correct: 0.98
- *     4 ratio correct: 0.98
- *     5 ratio correct: 0.99
- *     6 ratio correct: 0.99
- *     7 ratio correct: 0.98
- *     8 ratio correct: 0.98
- *     9 ratio correct: 0.97
- *     ./net  281.79s user 0.17s system 99% cpu 4:42.24 total
+ *     1 ratio correct: 0.95
+ *     2 ratio correct: 0.90
+ *     3 ratio correct: 0.93
+ *     4 ratio correct: 0.91
+ *     5 ratio correct: 0.91
+ *     6 ratio correct: 0.93
+ *     7 ratio correct: 0.93
+ *     8 ratio correct: 0.87
+ *     9 ratio correct: 0.90
+ *     average correct: 0.92
+ *     ./net  241.06s user 0.07s system 99% cpu 4:01.23 total
  *
+ *
+ *   hasn't converged?
+ *   performance on individual digits oscillates between epochs
  *
  *
  *   TODO:
+ *     - understand learning parameters
  *     - display filters learned
  *     - second convolution layer?
  *     - code generation
@@ -310,7 +273,7 @@ void backward()
     for(int wr = 0; wr < WINDOW; wr++) {
       for(int wc = 0; wc < WINDOW; wc++) {
         f1[d][wr][wc] *= 0.999999;
-        f1[d][wr][wc] += _f1[d][wr][wc]/100;
+        f1[d][wr][wc] += _f1[d][wr][wc]/50;
       }}}
 }
 
@@ -342,6 +305,9 @@ void read()
 
     // Train, alternating between digit types
     int maxExamples = 50000;
+    int trainingExamples = 8500; // 85% of data
+    int testCases = 0; // should be 10000 - trainingExamples
+    int successfulCases = 0;
     for(int index = 0; index < maxExamples; index++) {
       label = (index % LABELS);
 
@@ -361,16 +327,24 @@ void read()
       // TODO normalize image
 
       forward();
-      backward();
 
-      countCases[label]++;
-      if (label == maxScore)
-        countRight[label]++;
+      // Train on prefix of cases, only count successes on the rest
+      if (index < trainingExamples) {
+        backward();
+      } else {
+        countCases[label]++;
+        if (label == maxScore)
+          countRight[label]++;
+      }
     }
+    // summary statistics:
 done:
     for (int i = 0; i < LABELS; i++) {
       printf("%d ratio correct: %0.2f\n", i, (double)countRight[i]/countCases[i]);
+      testCases += countCases[i];
+      successfulCases += countRight[i];
     }
+    printf("average correct: %0.2f\n", (double)successfulCases/testCases);
 
     //printThetaNorm();
 
