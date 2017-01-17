@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <math.h>
 #include <time.h>
 
@@ -18,7 +19,7 @@
  *   Sample Results
  *   --------------
  *
- *   See `read` function for training details.
+ *   See `train` function for training details.
  *   Used 8500 cases for training and the remaining 1500 for validation:
  *     ...
  *     ===== EPOCH: 14 =====
@@ -53,6 +54,10 @@
 #define LABELS 10
 #define INPUTWIDTH 28
 #define DROPOUTWIDTH 28
+#define EXAMPLES 1000 // number of images for each digit
+
+// buffer for training data
+double data[LABELS][EXAMPLES][INPUTWIDTH][INPUTWIDTH];
 
 // parameters/layer values from forward pass
 double f1[L1DEPTH][WINDOW][WINDOW];
@@ -76,7 +81,6 @@ double _softmax[LABELS];
 double softmaxNormalizer;
 double softmaxDistribution[LABELS];
 int maxScore;
-int label;
 int countRight[LABELS];
 int countCases[LABELS];
 
@@ -103,10 +107,9 @@ void printSoftmax()
 {
   for (int out = 0; out < LABELS; out++)
     printf("%0.1f, ", softmax[out]);
-  printf("\n");
+  //printf("\n");
   //for (int out = 0; out < LABELS; out++)
   //  printf("%0.1f, ", _softmax[out]);
-  //printf("\n");
   printf("\n");
 }
 void printThetaNorm()
@@ -125,43 +128,11 @@ void printThetaNorm()
   printf("\nbias: %0.2f\n", biasNorm);
 }
 
-void printLabelling()
-{
-  printf("input label: %d, output label: %d, score: %0.2f\n", label, maxScore, softmaxDistribution[maxScore]);
-}
-
 double randun()
 {
   return ((double)rand())/((double)RAND_MAX)*2.0-1.0;
 }
 
-/* Init weights, Forward Pass, Backward pass */
-void init()
-{
-  // bias, weights
-  for (int out = 0; out < LABELS; out++) {
-    bias[out] = 0.0;
-  for (int d = 0; d < L1DEPTH; d++) {
-  for (int r = 0; r < DROPOUTWIDTH; r++) {
-  for (int c = 0; c < DROPOUTWIDTH; c++) {
-    full[out][d][r][c] = randun();
-  }}}}
-  // convolution filters
-  for (int d = 0; d < L1DEPTH; d++) {
-    for(int wr = 0; wr < WINDOW; wr++) {
-    for(int wc = 0; wc < WINDOW; wc++) {
-      // TODO add positive bias?
-      f1[d][wr][wc] = randun();
-    }}
-  }
-  // input padding
-  for (int i = 0; i < INPUTWIDTH+1; i++) {
-    input[0][i] = 0.0;
-    input[i][INPUTWIDTH-1] = 0.0;
-    input[INPUTWIDTH-1][i+1];
-    input[i+1][0] = 0.0;
-  }
-}
 void forward()
 {
   // TODO layers before dropout
@@ -213,7 +184,7 @@ void forward()
     softmaxDistribution[out] = exp(softmax[out]) / softmaxNormalizer;
 }
 
-void backward()
+void backward(int label)
 {
   // compute gradient at softmax score
   for (int out = 0; out < LABELS; out++)
@@ -230,9 +201,6 @@ void backward()
   }}}
   for (int out = 0; out < LABELS; out++) {
     _bias[out] = _softmax[out];
-    // L2 regularize
-    bias[out] *= 0.999999;
-    bias[out] += _bias[out] / 3.3;
     for (int d = 0; d < L1DEPTH; d++) {
     for (int r = 0; r < DROPOUTWIDTH; r++) {
     for (int c = 0; c < DROPOUTWIDTH; c++) {
@@ -262,6 +230,10 @@ void backward()
   }}}
 
   // apply gradients
+  for (int out = 0; out < LABELS; out++) {
+    bias[out] *= 0.999999;
+    bias[out] += _bias[out] / 3.3;
+  }
   for (int d = 0; d < L1DEPTH; d++) {
   for (int r = 0; r < DROPOUTWIDTH; r++) {
   for (int c = 0; c < DROPOUTWIDTH; c++) {
@@ -277,25 +249,80 @@ void backward()
       }}}
 }
 
-void read()
+void init()
 {
-  FILE *fp[LABELS];
-
-  int openFiles;
-
-  for (int epoch = 0; epoch < 15; epoch++) {
-    // (re)open files
-    printf("===== EPOCH: %d =====\n", epoch);
-    for(openFiles = 0; openFiles < LABELS; openFiles++) {
-      int digit = openFiles;
-      char filename[5];
-      sprintf(filename, "data%d", digit);
-      fp[digit] = fopen(filename, "r");
-      if (fp == NULL) {
-        printf("error: couldn't open data%d\n", digit);
-        goto done;
+  // bias, softmax weights
+  for (int out = 0; out < LABELS; out++) {
+    bias[out] = 0.0;
+    for (int d = 0; d < L1DEPTH; d++) {
+      for (int r = 0; r < DROPOUTWIDTH; r++) {
+        for (int c = 0; c < DROPOUTWIDTH; c++) {
+          full[out][d][r][c] = randun();
+        }
       }
     }
+  }
+  // convolution filters
+  for (int d = 0; d < L1DEPTH; d++) {
+    for(int wr = 0; wr < WINDOW; wr++) {
+      for(int wc = 0; wc < WINDOW; wc++) {
+        // TODO add positive bias?
+        f1[d][wr][wc] = randun();
+      }
+    }
+  }
+  // input padding
+  for (int i = 0; i < INPUTWIDTH+1; i++) {
+    input[0][i] = 0.0;
+    input[i][INPUTWIDTH-1] = 0.0;
+    input[INPUTWIDTH-1][i+1];
+    input[i+1][0] = 0.0;
+  }
+  for(int digit = 0; digit < LABELS; digit++) {
+    for (int i = 0; i < EXAMPLES; i++) {
+      for (int r = 0; r < INPUTWIDTH; r++) {
+        for (int c = 0; c < INPUTWIDTH; c++) {
+          data[digit][i][r][c] = 0;
+        }
+      }
+    }
+  }
+}
+
+bool read()
+{
+  FILE *fp;
+  char filename[5];
+
+  for(int digit = 0; digit < LABELS; digit++) {
+    sprintf(filename, "data%d", digit);
+    fp = fopen(filename, "r");
+    if (fp == NULL) {
+      printf("error: couldn't open data%d\n", digit);
+      return true;
+    }
+    for (int i = 0; i < EXAMPLES; i++) {
+      for (int r = 0; r < INPUTWIDTH; r++) {
+        for (int c = 0; c < INPUTWIDTH; c++) {
+          int b = fgetc(fp);
+          if (b == EOF) {
+            printf("unexpected EOF in file %d!\n", digit);
+            fclose(fp);
+            return true;
+          }
+          data[digit][i][r][c] = ((double)(b-128))/255.0;
+        }
+      }
+    }
+    fclose(fp);
+  }
+  return false;
+}
+
+void train()
+{
+  for (int epoch = 0; epoch < 15; epoch++) {
+    printf("===== EPOCH: %d =====\n", epoch);
 
     // record improvements each epoch
     for (int i = 0; i < LABELS; i++) {
@@ -303,54 +330,42 @@ void read()
       countCases[i] = 0;
     }
 
-    // Train, alternating between digit types
-    int maxExamples = 50000;
-    int trainingExamples = 8500; // 85% of data
-    int testCases = 0; // should be 10000 - trainingExamples
-    int successfulCases = 0;
-    for(int index = 0; index < maxExamples; index++) {
-      label = (index % LABELS);
-
-      // load an image
-      for (int r = 0; r < INPUTWIDTH; r++) {
-        for (int c = 0; c < INPUTWIDTH; c++) {
-          int b = fgetc(fp[label]);
-          if (b == EOF) {
-            printf("EOF at %d!\n", index);
-            goto done;
+    // Train on one image at a time, alternating digits
+    int trainingExamples = 0.85 * EXAMPLES;
+    for(int index = 0; index < EXAMPLES; index++) {
+      for (int label = 0; label < LABELS; label++) {
+        // load an image
+        for (int r = 0; r < INPUTWIDTH; r++) {
+          for (int c = 0; c < INPUTWIDTH; c++) {
+            // 1-padding offset
+            input[r+1][c+1] = data[label][index][r][c];
           }
-          // 1-padding offset
-          input[r+1][c+1] = ((double)(b-128))/255.0;
+        }
+
+        // TODO normalize image
+
+        forward();
+
+        // Train on prefix of cases, only count successes on the rest
+        if (index < trainingExamples) {
+          backward(label);
+        } else {
+          countCases[label]++;
+          if (label == maxScore)
+            countRight[label]++;
         }
       }
-
-      // TODO normalize image
-
-      forward();
-
-      // Train on prefix of cases, only count successes on the rest
-      if (index < trainingExamples) {
-        backward();
-      } else {
-        countCases[label]++;
-        if (label == maxScore)
-          countRight[label]++;
-      }
     }
+
     // summary statistics:
-done:
+    int testCases = 0;
+    int successfulCases = 0;
     for (int i = 0; i < LABELS; i++) {
-      printf("%d ratio correct: %0.2f\n", i, (double)countRight[i]/countCases[i]);
+      printf("\n%d ratio correct: %0.2f", i, (double)countRight[i]/countCases[i]);
       testCases += countCases[i];
       successfulCases += countRight[i];
     }
-    printf("average correct: %0.2f\n", (double)successfulCases/testCases);
-
-    //printThetaNorm();
-
-    // Close files
-    for(int digit = 0; digit < openFiles; digit++)
-      fclose(fp[digit]);
+    printf("\naverage correct: %0.2f\n", (double)successfulCases/testCases);
   }
 }
 
@@ -358,6 +373,10 @@ int main()
 {
   srand(time(0));
   init();
-  read();
+  if(read()) {
+    printf("error loading files.\n");
+    return 1;
+  }
+  train();
   return 0;
 }
