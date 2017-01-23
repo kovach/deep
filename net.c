@@ -6,7 +6,7 @@
 
 /*
  *   this is a classifier for the MNIST dataset:
- *       http://cis.jhu.edu/~sachin/digit/digit.html
+ *       http://yann.lecun.com/exdb/mnist/
  *
  *   its structure is:
  *     - 28x28 pixel input
@@ -19,33 +19,13 @@
  *   Sample Results
  *   --------------
  *
- *   See `train` function for training details.
- *   Used 8500 cases for training and the remaining 1500 for validation:
- *     ...
- *     ===== EPOCH: 14 =====
- *     EOF at 10000!
- *     0 ratio correct: 0.99
- *     1 ratio correct: 0.95
- *     2 ratio correct: 0.90
- *     3 ratio correct: 0.93
- *     4 ratio correct: 0.91
- *     5 ratio correct: 0.91
- *     6 ratio correct: 0.93
- *     7 ratio correct: 0.93
- *     8 ratio correct: 0.87
- *     9 ratio correct: 0.90
- *     average correct: 0.92
- *     ./net  241.06s user 0.07s system 99% cpu 4:01.23 total
- *
- *
- *   hasn't converged?
- *   performance on individual digits oscillates between epochs
  *
  *
  *   TODO:
  *     - understand learning parameters
  *     - display filters learned
  *     - second convolution layer?
+ *     - second fully connected?
  *     - code generation
  */
 
@@ -54,10 +34,14 @@
 #define LABELS 10
 #define INPUTWIDTH 28
 #define DROPOUTWIDTH 28
-#define EXAMPLES 1000 // number of images for each digit
+#define EXAMPLES 8000 // number of tests
+#define TESTS 1000
 
-// buffer for training data
-double data[LABELS][EXAMPLES][INPUTWIDTH][INPUTWIDTH];
+// buffers for training data
+double data[EXAMPLES][INPUTWIDTH][INPUTWIDTH];
+int labels[EXAMPLES];
+double test_data[TESTS][INPUTWIDTH][INPUTWIDTH];
+int test_labels[TESTS];
 
 // parameters/layer values from forward pass
 double f1[L1DEPTH][WINDOW][WINDOW];
@@ -230,22 +214,23 @@ void backward(int label)
   }}}
 
   // apply gradients
+  double alpha = 1.0;
   for (int out = 0; out < LABELS; out++) {
     bias[out] *= 0.999999;
-    bias[out] += _bias[out] / 3.3;
+    bias[out] += alpha * _bias[out] / 3.3;
   }
   for (int d = 0; d < L1DEPTH; d++) {
   for (int r = 0; r < DROPOUTWIDTH; r++) {
   for (int c = 0; c < DROPOUTWIDTH; c++) {
   for (int out = 0; out < LABELS; out++) {
       full[out][d][r][c] *= 0.999999;
-      full[out][d][r][c] += _full[out][d][r][c] / (28.0*3.3);
+      full[out][d][r][c] += alpha * _full[out][d][r][c] / (28.0*3.3);
   }}}}
   for (int d = 0; d < L1DEPTH; d++) {
     for(int wr = 0; wr < WINDOW; wr++) {
       for(int wc = 0; wc < WINDOW; wc++) {
         f1[d][wr][wc] *= 0.999999;
-        f1[d][wr][wc] += _f1[d][wr][wc]/50;
+        f1[d][wr][wc] += alpha * _f1[d][wr][wc]/50;
       }}}
 }
 
@@ -278,45 +263,70 @@ void init()
     input[INPUTWIDTH-1][i+1];
     input[i+1][0] = 0.0;
   }
-  for(int digit = 0; digit < LABELS; digit++) {
-    for (int i = 0; i < EXAMPLES; i++) {
-      for (int r = 0; r < INPUTWIDTH; r++) {
-        for (int c = 0; c < INPUTWIDTH; c++) {
-          data[digit][i][r][c] = 0;
-        }
-      }
-    }
-  }
 }
 
 bool read()
 {
   FILE *fp;
-  char filename[5];
+  char train_data_file[] = "train-images-idx3-ubyte";
+  char train_labels_file[] = "train-labels-idx1-ubyte";
+  char test_data_file[] = "t10k-images-idx3-ubyte";
+  char test_labels_file[] = "t10k-labels-idx1-ubyte";
+  char skip[16];
+  char buffer[INPUTWIDTH*INPUTWIDTH];
 
-  for(int digit = 0; digit < LABELS; digit++) {
-    sprintf(filename, "data%d", digit);
-    fp = fopen(filename, "r");
-    if (fp == NULL) {
-      printf("error: couldn't open data%d\n", digit);
-      return true;
-    }
-    for (int i = 0; i < EXAMPLES; i++) {
-      for (int r = 0; r < INPUTWIDTH; r++) {
-        for (int c = 0; c < INPUTWIDTH; c++) {
-          int b = fgetc(fp);
-          if (b == EOF) {
-            printf("unexpected EOF in file %d!\n", digit);
-            fclose(fp);
-            return true;
-          }
-          data[digit][i][r][c] = ((double)(b-128))/255.0;
-        }
+  /* Load training data */
+  fp = fopen(train_data_file, "r");
+  if (fp == NULL) {
+    printf("fail: %s\n", train_data_file);
+    return true;
+  }
+  fread(skip, 1, 16, fp); // skip header
+  for(int i = 0; i < EXAMPLES; i++) {
+    fgets(buffer, INPUTWIDTH*INPUTWIDTH, fp);
+    for (int r = 0; r < INPUTWIDTH; r++) {
+      for (int c = 0; c < INPUTWIDTH; c++) {
+        data[i][r][c] = ((double)(buffer[r*INPUTWIDTH+c]-128))/255.0;
       }
     }
-    fclose(fp);
   }
-  return false;
+  fclose(fp);
+  fp = fopen(train_labels_file, "r");
+  if (fp == NULL) {
+    printf("fail: %s\n", train_labels_file);
+    return true;
+  }
+  fread(skip, 1, 8, fp); // skip header
+  for(int i = 0; i < EXAMPLES; i++) {
+    labels[i] = fgetc(fp);
+  }
+  fclose(fp);
+  /* Load testing data */
+  fp = fopen(test_data_file, "r");
+  if (fp == NULL) {
+    printf("fail: %s\n", test_data_file);
+    return true;
+  }
+  fread(skip, 1, 16, fp); // skip header
+  for(int i = 0; i < TESTS; i++) {
+    fgets(buffer, INPUTWIDTH*INPUTWIDTH, fp);
+    for (int r = 0; r < INPUTWIDTH; r++) {
+      for (int c = 0; c < INPUTWIDTH; c++) {
+        test_data[i][r][c] = ((double)(buffer[r*INPUTWIDTH+c]-128))/255.0;
+      }
+    }
+  }
+  fclose(fp);
+  fp = fopen(test_labels_file, "r");
+  if (fp == NULL) {
+    printf("fail: %s\n", test_labels_file);
+    return true;
+  }
+  fread(skip, 1, 8, fp); // skip header
+  for(int i = 0; i < TESTS; i++) {
+    test_labels[i] = fgetc(fp);
+  }
+  fclose(fp);
 }
 
 void train()
@@ -330,31 +340,34 @@ void train()
       countCases[i] = 0;
     }
 
-    // Train on one image at a time, alternating digits
-    int trainingExamples = 0.85 * EXAMPLES;
+    // Train on one image at a time
     for(int index = 0; index < EXAMPLES; index++) {
-      for (int label = 0; label < LABELS; label++) {
-        // load an image
-        for (int r = 0; r < INPUTWIDTH; r++) {
-          for (int c = 0; c < INPUTWIDTH; c++) {
-            // 1-padding offset
-            input[r+1][c+1] = data[label][index][r][c];
-          }
-        }
-
-        // TODO normalize image
-
-        forward();
-
-        // Train on prefix of cases, only count successes on the rest
-        if (index < trainingExamples) {
-          backward(label);
-        } else {
-          countCases[label]++;
-          if (label == maxScore)
-            countRight[label]++;
+      // load an image
+      for (int r = 0; r < INPUTWIDTH; r++) {
+        for (int c = 0; c < INPUTWIDTH; c++) {
+          // 1-padding offset
+          input[r+1][c+1] = data[index][r][c];
         }
       }
+      forward();
+      backward(labels[index]);
+    }
+
+    // Evaluate on test set
+    for(int test = 0; test < TESTS; test++) {
+      for (int r = 0; r < INPUTWIDTH; r++) {
+        for (int c = 0; c < INPUTWIDTH; c++) {
+          // 1-padding offset
+          input[r+1][c+1] = test_data[test][r][c];
+        }
+      }
+      int label = test_labels[test];
+
+      forward();
+
+      countCases[label]++;
+      if (label == maxScore)
+        countRight[label]++;
     }
 
     // summary statistics:
@@ -365,7 +378,8 @@ void train()
       testCases += countCases[i];
       successfulCases += countRight[i];
     }
-    printf("\naverage correct: %0.2f\n", (double)successfulCases/testCases);
+    printf("\n%d tests, average correct: %0.2f\n", testCases,
+        (double)successfulCases/testCases);
   }
 }
 
@@ -377,6 +391,12 @@ int main()
     printf("error loading files.\n");
     return 1;
   }
+  //for(int i = 0; i < 500; i++)
+  //  printf("%d, ", labels[i]);
+  //printf("\n.\n");
+  //for(int i = 0; i < 500; i++)
+  //  printf("%d, ", test_labels[i]);
+  //return 1;
   train();
   return 0;
 }
