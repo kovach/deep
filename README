@@ -1,1 +1,16 @@
-I'm working on my first convolutional net implementation; I will keep my progress posted here.
+* net.c: a manual implementation of a convolution layer/softmax network with
+  backpropagation. it reached >90% accuracy on a subset of the MNIST data, but
+  doesn't converge on the full dataset yet.
+
+  immediate goals:
+    - add second convolution layer, compare performance to keras network
+    - better understand parameter initialization and maybe implement batch normalization
+    - switch to less tedious programming language
+
+* keras: a notebook with a two layer convolutional net. can achieve 97%
+    accuracy on the testing set, but doesn't seem to converge reliably.
+
+
+some resources used:
+  - http://cs231n.github.io/
+  - https://github.com/fchollet/keras/blob/cc92025fdc862e00cf787cc309c741e8944ed0a7/examples/mnist_cnn.py
